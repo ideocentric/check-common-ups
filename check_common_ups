@@ -1,5 +1,10 @@
 #!/bin/bash
 # this file: /usr/lib64/nagios/plugins/check_common_ups
+# Matt Comeione - 2019-01-24 - Added flag to return numeric OIDs for dealing
+#                    with inconsistencies in MIBs.  Revised model parsing to
+#                    use numeric OIDs.  Restructured blocks for calibration
+#                    and Diagnotic tests and Calibration tests to prevent
+#                    alerts when ommiting these tests. 
 # Mel - 2016-09-15 - icinga2 check apc ups
 # Mel - 2016-09-19 - add cyber power ups checks - Note: CyberPower has some
 #                    "Wrong Type" errors in their MIB file. These are made
@@ -11,9 +16,9 @@
 # Mel - 2016-09-29 - add bash version check, change sysName to numeric MIB
 #                    for consistency
 # Mel - 2017-04-11 - added option to skip battery replace flag check, since
-#                    cyber power 202 and 303 cards (and maybe others) do not 
+#                    cyber power 202 and 303 cards (and maybe others) do not
 #                    have this OID. Recommend 205/305 cards instead. However,
-#                    this OID is really just a calculation of last battery 
+#                    this OID is really just a calculation of last battery
 #                    replace date + 3 years, and battery replace date can
 #                    be manually reset through the web interface.
 # Mel - 2017-04-13 - change upstype to autodetect.
@@ -21,22 +26,22 @@
 #                    Note: For sysDescr CyberPower always returns "UPS SNMP Card"
 #                    across all cards tested. APC returns full details, example:
 #                    APC Web/SNMP Management Card (MB:v4.0.1 PF:v6.1.1 PN:apc_hw05_aos_611.bin AF1:v6.1.1 AN1:apc_hw05_sumx_611.bin MN:AP9630 HR:05 SN: ZA1425004783 MD:06/18/2014) (Embedded PowerNet SNMP Agent SW v2.2 compatible)
-# Mel - 2017-04-28 - Fix calibration/diagnostic days result in perfdata when 
+# Mel - 2017-04-28 - Fix calibration/diagnostic days result in perfdata when
 #                    they have not been run
 # Mel - 2017-05-10 - Typo: unsuppoted
 # !!!!!!!!!!!!!!!!!!!!!!!!!!! REQUIRES BASH 4 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# THE PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT 
+# THE PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT
 # ANY WARRANTY. IT IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
-# EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES 
-# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS 
-# TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. SHOULD THE 
-# PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, 
-# REPAIR OR CORRECTION. IN NO EVENT WILL THE AUTHOR BE LIABLE TO YOU FOR 
-# DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES 
-# ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT 
-# LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED 
-# BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER 
-# PROGRAMS), EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH 
+# EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS
+# TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. SHOULD THE
+# PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING,
+# REPAIR OR CORRECTION. IN NO EVENT WILL THE AUTHOR BE LIABLE TO YOU FOR
+# DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES
+# ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT
+# LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED
+# BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER
+# PROGRAMS), EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
 # DAMAGES.
 
 version="2017-05-10"
@@ -71,10 +76,10 @@ Options:
   -B, --noreplaceck, Do not check battery replace status. The battery
      replace status is just a calculation the battery replaced date plus
      3 years. The battery replace date can be set in the web interface.
-     The cyber 202 and 303 cards (and maybe others) do not have this OID. 
+     The cyber 202 and 303 cards (and maybe others) do not have this OID.
   -C STRING, --community STRING, The SNMP community string. Defaults to
      "public".
-  -d CHAR, --degrees CHAR, Accepted values are C, c, F, or f. For celsius or 
+  -d CHAR, --degrees CHAR, Accepted values are C, c, F, or f. For celsius or
      fahrenheit. Invalid values or not set will default to fahrenheit. This
      setting is also used by -t and -T to determine default values.
   -h, --help  Show this help message.
@@ -101,7 +106,7 @@ Options:
      is more than INTEGER degrees. Celsius or fahrenheit is set by -d.
      If not set, defaults to 45 celsius, or 113 fahrenheit (see -d)
   -T INTEGER, --crittemp INTEGER, Set CRITICAL status if battery temperature
-     is more than INTEGER degrees Celsius or fahrenheit is set by -d. 
+     is more than INTEGER degrees Celsius or fahrenheit is set by -d.
      Crit values not greater than warn values will be set to warn value +1.
      If not set, defaults to 50 celsius, or 122 fahrenheit. (see -d)
   -v, --voltcrit Set CRITICAL for input voltage low or high results. (-i
@@ -125,12 +130,13 @@ Options:
   -z, --nodiagdata Disables diagnostic days performance data.
   -Z, --nocalibdata Disables calibration days performance data.
 Example:
-  $(basename $0) -H 10.1.2.3 -C public -b -d c -i 105 -I 133 -l 20 -L 40 -r 15 -R 10 -t 44 -T 51 -w 14 -W 21 -X 
+  $(basename $0) -H 10.1.2.3 -C public -b -d c -i 105 -I 133 -l 20 -L 40 -r 15 -R 10 -t 44 -T 51 -w 14 -W 21 -X
 MEL
 }
 
 # FIXME replace below with some test for snmp version, and ummm... add support for other versions (user, password, etc)
-SNMPget="snmpget -v1"
+# Set return values to numeric OIDs only to avoid MIB version conflicts
+SNMPget="snmpget -v1 -On"
 
 showver(){
     echo "$(basename $0) version $version"
@@ -232,9 +238,8 @@ sysObjectID="1.3.6.1.2.1.1.2.0"
 
 # check which brand of ups
 snmpPoll "$sysObjectID" sysObjectID
-upsvendorID="${snmpresult##*:}"
-upsvendorID="${upsvendorID#*.}"
-upsvendorID="${upsvendorID%%.*}"
+# Revised parsing to deal with numeric results only.
+upsvendorID=`echo "${snmpresult}" | cut -d"." -f17`
 case ${upsvendorID} in
     318)     upstype="apc";upsvendorPrettyName="APC";;
     3808)    upstype="cyber";upsvendorPrettyName="CyberPower";;
@@ -308,14 +313,14 @@ if [[ $onbattime != "0:00:00.00" ]];then
     exitstring="$onbatt: on battery"
 fi
 
-snmpPoll "$MIBdiagResult" DiagnosticResult
-diagnostic="${snmpresult##* }"
-if [[ $diagnostic != "ok(1)" ]] && [[ $diagnostic != "1" ]];then
-    exitstatus=2
-    [[ -z $exitstring ]] && exitstring="CRIT: diagnostics error" || exitstring="$exitstring, CRIT: diagnostics error"
-fi
-
 if [[ $diagtest != "no" ]];then
+    snmpPoll "$MIBdiagResult" DiagnosticResult
+    diagnostic="${snmpresult##* }"
+    if [[ $diagnostic != "ok(1)" ]] && [[ $diagnostic != "1" ]];then
+        exitstatus=2
+        [[ -z $exitstring ]] && exitstring="CRIT: diagnostics error" || exitstring="$exitstring, CRIT: diagnostics error"
+    fi
+
     snmpPoll "$MIBlastDiag" DiagnosticDate
     diagdate="${snmpresult#*\"}"
     diagdate="${diagdate//\"/}"
@@ -339,14 +344,13 @@ if [[ $diagtest != "no" ]];then
     fi
 fi
 
-snmpPoll "$MIBcalibResult" CalibrationResult
-calibration="${snmpresult##* }"
-if [[ $calibration != "ok(1)" ]] && [[ $calibration != "1" ]];then
-    exitstatus=2
-    [[ -z $exitstring ]] && exitstring="CRIT: calibration error" || exitstring="$exitstring, CRIT: calibration error"
-fi
-
 if [[ $calibtest != "no" ]];then
+    snmpPoll "$MIBcalibResult" CalibrationResult
+    calibration="${snmpresult##* }"
+    if [[ $calibration != "ok(1)" ]] && [[ $calibration != "1" ]];then
+      exitstatus=2
+      [[ -z $exitstring ]] && exitstring="CRIT: calibration error" || exitstring="$exitstring, CRIT: calibration error"
+    fi
     snmpPoll "$MIBcalibDate" CalibrationDate
     calibdate="${snmpresult#*\"}"
     calibdate="${calibdate//\"/}"
